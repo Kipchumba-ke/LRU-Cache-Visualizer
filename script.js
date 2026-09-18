@@ -11,30 +11,30 @@ export class CacheNode {
 CacheNode.nextId = 1;
 
 export class LRUCache {
-  constructor(capacity) {
-    this.capacity = capacity;
-    this.Map = new Map();
+  constructor(capacity = 3) {
+    this.setCapacityLimit(capacity)
+    this.map = new Map();
     this.head = null;
     this.tail = null;
     this.size = 0;
   }
 
   get(key) {
-    const node = this.Map.get(key);
+    const node = this.map.get(key);
     if (!node) return {hit:false, value: undefined, node: null};
     this.moveToHead(node);
-    return {hit:true, value: node.value, node: node};
+    return {hit:true, value: node.value, node};
   }
 
   put(key, value) {
-    const existingNode = this.Map.get(key);
+    const existingNode = this.map.get(key);
     if (existingNode) {
       existingNode.value = value;
       this.moveToHead(existingNode);
       return {type: 'update', node: existingNode, evicted: null};
     }
     const node = new CacheNode(key, value);
-    this.Map.set(key, node);
+    this.map.set(key, node);
     this.addToHead(node);
     this.size += 1;
 
@@ -56,6 +56,7 @@ export class LRUCache {
     resize(capacity) {
       this.setCapacityLimit(capacity);
       const evicted = [];
+
       while (this.size > this.capacity) {
         evicted.push(this.removeTail());
       }
@@ -65,11 +66,8 @@ export class LRUCache {
     addToHead(node) {
       node.prev = null;
       node.next = this.head;
-      if (this.head) {
-        this.head.prev = node;
-      }else {
-        this.tail = node;
-      }
+      if (this.head) this.head.prev = node;
+      else this.tail = node;
       this.head = node;
     }
 
@@ -98,13 +96,13 @@ export class LRUCache {
       if (!this.tail) return null;
       const node = this.tail;
       this.removeNode(node);
-      this.Map.delete(node.key);
+      this.map.delete(node.key);
       this.size -= 1;
       return node;
     }
 
     clear() {
-      this.Map.clear();
+      this.map.clear();
       this.head = null;
       this.tail = null;
       this.size = 0;
@@ -129,7 +127,7 @@ class CacheDashboard {
     this.misses = 0;
     this.logs = [];
     this.selectedKey = null;
-    this.isAnimating = true;
+    this.isAnimating = false;
     this.trace = [];
     this.traceIndex = -1;
     this.elements = this.getElements();
@@ -138,7 +136,7 @@ class CacheDashboard {
   }
 
   getElements(){
-    const get = document.getElementById(id)
+    const get = (id) => document.getElementById(id)
     return {
       capacityStat: get("capacity-stat"),
       sizeStat: get("size-stat"),
@@ -173,35 +171,35 @@ class CacheDashboard {
     }
   }
 
-  bindEvents(){
-    this.elements.putForm.addEventListener("submit", (e)=>{
-      e.preventDefault();
+  bindEvents() {
+    this.elements.putForm.addEventListener("submit", (event) => {
+      event.preventDefault();
       const key = this.elements.putKey.value.trim();
       const value = this.elements.putValue.value.trim();
-      if(!key || !value) return;
-      this.put(key, value)
+      if (!key || !value) return;
+      this.put(key, value);
       this.elements.putForm.reset();
-      this.elements.putKey.focus()
-    })
+      this.elements.putKey.focus();
+    });
 
-    this.elements.getForm.addEventListener("submit", (e)=>{
-      e.preventDefault()
+    this.elements.getForm.addEventListener("submit", (event) => {
+      event.preventDefault();
       const key = this.elements.getKey.value.trim();
-      if(!key) return;
+      if (!key) return;
       this.get(key);
-      this.elements.getForm.reset()
-      this.elements.getKey.focus()
-    })
+      this.elements.getForm.reset();
+      this.elements.getKey.focus();
+    });
 
-    this.elements.capacityInput.addEventListener("change", ()=>{
-      this.resize(this.elements.capacityInput.value)
-    })
-
-    this.decreaseCapacity.addEventListener("click", ()=> this.resize(this.cache.capacity - 1));
-    this.increaseCapacity.addEventListener("click", ()=> this.resize(this.cache.capacity + 1));
-    this.elements.resetButton.addEventListener("click", ()=> this.reset());
-    this.elements.traceBack.addEventListener("click", ()=> this.moveTrace(-1));
-    this.elements.traceNext.addEventListener("click", ()=> this.moveTrace(1));
+    this.elements.capacityInput.addEventListener("change", () => {
+      this.resize(this.elements.capacityInput.value);
+    });
+    this.elements.decreaseCapacity.addEventListener("click", () => this.resize(this.cache.capacity - 1));
+    this.elements.increaseCapacity.addEventListener("click", () => this.resize(this.cache.capacity + 1));
+    this.elements.resetButton.addEventListener("click", () => this.reset());
+    this.elements.traceBack.addEventListener("click", () => this.moveTrace(-1));
+    this.elements.traceNext.addEventListener("click", () => this.moveTrace(1));
+    this.createExampleSteps();
   }
 
   put(key, value) {
@@ -215,7 +213,7 @@ class CacheDashboard {
     this.recordTrace(`PUT(${key}, ${value})`, `Before: ${before}`, result.evicted ? `Evicted ${result.evicted.key}` : `Head is now ${key}`)
     this.render()
 
-    const nodeElement = this.findeNodeElement(key);
+    const nodeElement = this.findNodeElement(key);
     nodeElement?.classList.add("promote");
 
     if(result.evicted) {
@@ -262,6 +260,7 @@ class CacheDashboard {
   resize(value){
     if(this.isAnimating) return;
     const capacity = Math.max(1, Math.min(10, Math.round(Number(value) || 3)));
+    this.elements.capacityInput.value = capacity
     if (capacity === this.cache.capacity) return;
 
     const oldCapacity = this.cache.capacity;
@@ -334,6 +333,8 @@ class CacheDashboard {
   render() {
     this.renderStats();
     this.renderList();
+    this.renderMap()
+    this.renderLog()
     this.renderInspector();
     this.renderTrace();
   }
@@ -376,4 +377,114 @@ class CacheDashboard {
       this.elements.chain.append(this.createNodeElement(node, index, nodes.length));
     });
   }
+
+  createNodeElement(node, index, total){
+    const element = document.createElement("div")
+    element.className = `cache-node${node.key === this.selectedKey ? " selected" : ""}`;
+    element.dataset.key = node.key
+    element.setAttribute("aria-label", `Node ${node.key}, value ${node.value}`)
+
+    const badge = document.createElement("span")
+    badge.className = "node-badge"
+    badge.style.background = index === total - 1 ? "var(--red)" : "var(--purple)";
+    badge.textContent = index === 0 ? "MRU" : index === total - 1 ? "LRU" : "NODE";
+
+    const key = document.createElement("div");
+    key.className = "node-key";
+    key.textContent = node.key;
+    const value = document.createElement("div");
+    value.className = "node-value";
+    value.textContent = node.value;
+    const prev = document.createElement("div");
+    prev.className = "pointer";
+    prev.textContent = `prev: ${node.prev?.key ?? "null"}`;
+    const next = document.createElement("div");
+    next.className = "pointer";
+    next.textContent = `next: ${node.next?.key ?? "null"}`;
+
+    element.append(badge, key, value, prev, next);
+    return element;
+  }
+
+  renderMap(){
+    this.elements.mapBody.replaceChildren()
+    if (!this.cache.size){
+      const row = document.createElement("tr")
+      row.innerHTML = '<td colspan="3" style="text-align:center;color:var(--muted)">Map is empty</td>'
+      this.elements.mapBody.append(row)
+      return;
+    }
+
+    for (const [key, node] of this.cache.map){
+      const row = document.createElement("tr");
+      [key, node.value, node.id].forEach((value)=>{
+        const cell = document.createElement("td")
+        cell.textContent = value
+        row.append(cell)
+      })
+      this.elements.mapBody.append(row)
+    }
+  }
+
+  renderLog(){
+    this.elements.log.replaceChildren()
+    if(!this.logs.length){
+      const empty = document.createElement("p")
+      empty.className = "muted"
+      empty.textContent = "Your actions will appear here"
+      this.elements.log.append(empty)
+      return
+    }
+
+    this.logs.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "log-row";
+      row.innerHTML = `<span class="log-op"></span><span class="log-message"></span><span class="log-time"></span>`;
+      row.querySelector(".log-op").textContent = entry.operation;
+      row.querySelector(".log-message").textContent = entry.message;
+      row.querySelector(".log-time").textContent = entry.time;
+      this.elements.log.append(row);
+    });
+  }
+
+  renderInspector(){
+    const node = this.selectedKey === null?null: this.cache.map.get(this.selectedKey)
+    this.elements.inspector.textContent = node
+      ? `${node.id} · key = ${node.key} · value = ${node.value} · prev = ${node.prev?.key ?? "null"} · next = ${node.next?.key ?? "null"}`
+      : "Run GET or PUT to inspect a node.";
+  }
+
+  findNodeElement(key) {
+    return [...this.elements.chain.querySelectorAll(".cache-node")].find((element) => element.dataset.key === key);
+  }
+
+  createExampleSteps() {
+    const steps = [
+      ["PUT", "A", "Apple", "A"],
+      ["PUT", "B", "Banana", "B ⇄ A"],
+      ["PUT", "C", "Cherry", "C ⇄ B ⇄ A"],
+      ["GET", "B", null, "B ⇄ C ⇄ A"],
+      ["PUT", "D", "Date", "D ⇄ B ⇄ C"],
+      ["GET", "A", null, "MISS"],
+    ];
+
+    steps.forEach(([operation, key, value, result], index) => {
+      const button = document.createElement("button");
+      button.className = "button step-button";
+      button.type = "button";
+      button.innerHTML = `<span class="step-number">${index + 1}</span><span>${operation}(${key}${value ? `, ${value}` : ""})<small>${result}</small></span>`;
+      button.addEventListener("click", () => {
+        if (index === 0) this.reset();
+        operation === "PUT" ? this.put(key, value) : this.get(key);
+      });
+      this.elements.steps.append(button);
+    });
+  }
 }
+
+const cache = new LRUCache(3);
+const dashboard = new CacheDashboard(cache);
+
+
+window.lruCache = cache;
+window.lruDashboard = dashboard;
